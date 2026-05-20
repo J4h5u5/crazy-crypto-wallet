@@ -2,9 +2,12 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { PieTelegramRoot } from "@swarm.ing/pieui";
+import { PieTelegramRoot, PieRoot } from "@swarm.ing/pieui";
 import "@/piecomponents/registry";
 import { usePathname, useSearchParams } from "next/navigation";
+
+const isTelegram = process.env.PIE_PLATFORM === "telegram";
+const Root = isTelegram ? PieTelegramRoot : PieRoot;
 
 export default function PiePage() {
   const router = useRouter();
@@ -47,13 +50,13 @@ export default function PiePage() {
   }, [router, pathname]);
 
   return (
-    <PieTelegramRoot
+    <Root
       location={{ pathname, search }}
       config={{
         apiServer: process.env.PIE_API_SERVER!,
         centrifugeServer: process.env.PIE_CENTRIFUGE_SERVER!,
         enableRenderingLog: true,
-        pageProcessor: "telegram",
+        pageProcessor: isTelegram ? "telegram" : undefined,
       }}
       onNavigate={(url) => router.push(url)}
       fallback={<></>}

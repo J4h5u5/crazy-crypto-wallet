@@ -108,6 +108,7 @@ const WalletLandingCard = ({ data, setUiAjaxConfiguration }: WalletLandingCardPr
                 }}>
                     {/* Primary — crazy asymmetric: big radius top-left/bottom-right, sharp top-right/bottom-left */}
                     <button
+                        type="button"
                         onClick={() => router.push('/wallet/create')}
                         style={{
                             width: '100%',
@@ -133,6 +134,7 @@ const WalletLandingCard = ({ data, setUiAjaxConfiguration }: WalletLandingCardPr
 
                     {/* Secondary — mirrored asymmetric: sharp top-left/bottom-right, big radius top-right/bottom-left */}
                     <button
+                        type="button"
                         onClick={() => router.push('/wallet/import')}
                         style={{
                             width: '100%',

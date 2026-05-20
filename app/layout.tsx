@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
+import { WalletProvider } from "@/components/WalletContext";
 
 export const metadata: Metadata = {
   title: "Crazy Wallet",
@@ -30,7 +31,9 @@ export default function RootLayout({
         />
       </head>
       <body style={{ margin: 0, background: "#f2f2f7", overflow: "hidden" }}>
-        {children}
+        <WalletProvider>
+          {children}
+        </WalletProvider>
       </body>
     </html>
   );

@@ -4,3 +4,11 @@
 // Example:
 // import "@/piecomponents/MyCustomCard";
 import "@/piecomponents/WalletLandingCard";
+import "@/piecomponents/NetworkSelectorCard";
+import "@/piecomponents/SeedPhraseDisplayCard";
+import "@/piecomponents/SeedInputCard";
+import "@/piecomponents/PinSetupCard";
+import "@/piecomponents/WalletAddressCard";
+import "@/piecomponents/UnlockCard";
+import "@/piecomponents/SendCard";
+import "@/piecomponents/TokenListCard";
