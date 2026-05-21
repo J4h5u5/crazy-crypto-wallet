@@ -95,35 +95,48 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
     const [privKey, setPrivKey] = useState('')
     const [customSeed, setCustomSeed] = useState('')
     const [addressPreview, setAddressPreview] = useState<string | null>(null)
+    const [customAddress, setCustomAddress] = useState<string | null>(null)
+    const [customAddressLoading, setCustomAddressLoading] = useState(false)
     const [error, setError] = useState('')
     const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
-    // Derive address preview for privkey and custom seed modes
+    // Privkey address preview
     useEffect(() => {
-        if (mode !== 'privkey' && mode !== 'custom') { setAddressPreview(null); return }
-
-        const input = mode === 'privkey' ? privKey : customSeed
-        if (!input.trim()) { setAddressPreview(null); return }
-
+        if (mode !== 'privkey' || !privKey.trim()) { setAddressPreview(null); return }
         let cancelled = false
         ;(async () => {
             try {
-                let seedWords: string[]
-                if (mode === 'privkey') {
-                    const hexKey = await normalizePrivKey(input, network)
-                    if (!hexKey) { setAddressPreview(null); return }
-                    seedWords = ['__privkey__', hexKey]
-                } else {
-                    seedWords = ['__wavesseed__', input]
-                }
-                const addr = await deriveAddress(seedWords, network)
+                const hexKey = await normalizePrivKey(privKey, network)
+                if (!hexKey) { if (!cancelled) setAddressPreview(null); return }
+                const addr = await deriveAddress(['__privkey__', hexKey], network)
                 if (!cancelled) setAddressPreview(addr)
             } catch {
                 if (!cancelled) setAddressPreview(null)
             }
         })()
         return () => { cancelled = true }
-    }, [privKey, customSeed, network, mode])
+    }, [privKey, network, mode])
+
+    // Custom WAVES seed address preview — direct import, no shared state
+    useEffect(() => {
+        if (mode !== 'custom' || !customSeed.trim()) {
+            setCustomAddress(null)
+            setCustomAddressLoading(false)
+            return
+        }
+        setCustomAddressLoading(true)
+        let cancelled = false
+        ;(async () => {
+            try {
+                const { address, keyPair } = await import('@waves/ts-lib-crypto')
+                const addr = address(keyPair(customSeed))
+                if (!cancelled) { setCustomAddress(addr); setCustomAddressLoading(false) }
+            } catch {
+                if (!cancelled) { setCustomAddress(null); setCustomAddressLoading(false) }
+            }
+        })()
+        return () => { cancelled = true }
+    }, [customSeed, mode])
 
     const dynamicSubtitle = mode === 'privkey'
         ? "paste ur private key. we wont tell anyone."
@@ -202,7 +215,7 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
             setError('type something. anything.')
             return
         }
-        if (!addressPreview) {
+        if (!customAddress) {
             setError('address not derived yet, wait a sec')
             return
         }
@@ -448,28 +461,30 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                                 fontWeight: 600,
                                 color: '#1c1c1e',
                                 background: '#fff',
-                                border: `1.5px solid ${customSeed ? '#1c1c1e' : '#e5e5ea'}`,
+                                border: `1.5px solid ${customAddress ? '#34c759' : customSeed ? '#1c1c1e' : '#e5e5ea'}`,
                                 borderRadius: '10px 3px 10px 3px',
                                 outline: 'none',
                                 fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
                                 resize: 'none',
                                 lineHeight: 1.5,
+                                transition: 'border-color 0.2s',
                             }}
                         />
-                        {addressPreview && (
+                        {customSeed.trim() && (
                             <div style={{
                                 marginTop: 8,
                                 padding: '10px 12px',
-                                background: '#d1f5dc',
+                                background: customAddress ? '#d1f5dc' : '#f2f2f7',
                                 borderRadius: '3px 10px 3px 10px',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: 2,
+                                minHeight: 48,
                             }}>
                                 <span style={{
                                     fontSize: 10,
                                     fontWeight: 700,
-                                    color: '#1a7a3a',
+                                    color: customAddress ? '#1a7a3a' : '#aeaeb2',
                                     fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.5px',
@@ -478,11 +493,11 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                                 </span>
                                 <span style={{
                                     fontSize: 11,
-                                    color: '#1c1c1e',
+                                    color: customAddress ? '#1c1c1e' : '#aeaeb2',
                                     fontFamily: 'monospace',
                                     wordBreak: 'break-all',
                                 }}>
-                                    {addressPreview}
+                                    {customAddressLoading ? 'deriving...' : (customAddress ?? '—')}
                                 </span>
                             </div>
                         )}
