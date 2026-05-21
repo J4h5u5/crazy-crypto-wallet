@@ -1,19 +1,35 @@
 "use client"
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { PieCard } from '@swarm.ing/pieui'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { validateSeedPhraseForNetwork, Network } from '@/lib/wallet/crypto'
+import { validateSeedPhraseForNetwork, deriveAddress, Network } from '@/lib/wallet/crypto'
 import { useWallet } from '@/components/WalletContext'
 import { SeedInputCardProps } from '../types'
 
 type Mode = 'seed' | 'privkey'
 
+// secp256k1 curve order — private key must be strictly within (0, ORDER)
+const SECP256K1_ORDER = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141')
+
+function checkSecp256k1Range(hex: string): boolean {
+    const k = BigInt('0x' + hex)
+    return k > BigInt(0) && k < SECP256K1_ORDER
+}
+
 async function normalizePrivKey(raw: string, net: Network): Promise<string | null> {
     const trimmed = raw.trim()
 
-    if (net === 'eth' || net === 'bsc' || net === 'ton') {
+    if (net === 'eth' || net === 'bsc') {
         const hex = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
-        return /^[0-9a-fA-F]{64}$/.test(hex) ? hex.toLowerCase() : null
+        if (!/^[0-9a-fA-F]{64}$/.test(hex)) return null
+        return checkSecp256k1Range(hex) ? hex.toLowerCase() : null
+    }
+
+    if (net === 'ton') {
+        // TON uses Ed25519 — any 32-byte non-zero value is valid
+        const hex = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
+        if (!/^[0-9a-fA-F]{64}$/.test(hex)) return null
+        return BigInt('0x' + hex) > BigInt(0) ? hex.toLowerCase() : null
     }
 
     if (net === 'btc') {
@@ -22,14 +38,17 @@ async function normalizePrivKey(raw: string, net: Network): Promise<string | nul
             try {
                 const { WIF, NETWORK } = await import('@scure/btc-signer')
                 const decoded = WIF(NETWORK).decode(trimmed)
-                return Buffer.from(decoded).toString('hex')
+                const hex = Buffer.from(decoded).toString('hex')
+                return checkSecp256k1Range(hex) ? hex : null
             } catch { return null }
         }
         const hex = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
-        return /^[0-9a-fA-F]{64}$/.test(hex) ? hex.toLowerCase() : null
+        if (!/^[0-9a-fA-F]{64}$/.test(hex)) return null
+        return checkSecp256k1Range(hex) ? hex.toLowerCase() : null
     }
 
     if (net === 'sol') {
+        // SOL uses Ed25519 — any 32-byte non-zero seed is valid
         // Base58-encoded full 64-byte keypair (phantom/solflare export)
         if (/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(trimmed)) {
             try {
@@ -39,7 +58,8 @@ async function normalizePrivKey(raw: string, net: Network): Promise<string | nul
             } catch { return null }
         }
         const hex = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
-        return /^[0-9a-fA-F]{64}$/.test(hex) ? hex.toLowerCase() : null
+        if (!/^[0-9a-fA-F]{64}$/.test(hex)) return null
+        return BigInt('0x' + hex) > BigInt(0) ? hex.toLowerCase() : null
     }
 
     return null
@@ -56,8 +76,29 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
     const [wordCount, setWordCount] = useState<12 | 24>(12)
     const [words, setWords] = useState<string[]>(Array(12).fill(''))
     const [privKey, setPrivKey] = useState('')
+    const [addressPreview, setAddressPreview] = useState<string | null>(null)
     const [error, setError] = useState('')
     const inputRefs = useRef<(HTMLInputElement | null)[]>([])
+
+    // Derive address preview whenever privKey or network changes in privkey mode
+    useEffect(() => {
+        if (mode !== 'privkey' || !privKey.trim()) {
+            setAddressPreview(null)
+            return
+        }
+        let cancelled = false
+        ;(async () => {
+            const hexKey = await normalizePrivKey(privKey, network)
+            if (cancelled || !hexKey) { setAddressPreview(null); return }
+            try {
+                const addr = await deriveAddress(['__privkey__', hexKey], network)
+                if (!cancelled) setAddressPreview(addr)
+            } catch {
+                if (!cancelled) setAddressPreview(null)
+            }
+        })()
+        return () => { cancelled = true }
+    }, [privKey, network, mode])
 
     const dynamicSubtitle = mode === 'privkey'
         ? "paste ur private key. we wont tell anyone."
@@ -273,14 +314,61 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                                 fontWeight: 600,
                                 color: '#1c1c1e',
                                 background: '#fff',
-                                border: `1.5px solid ${privKey ? '#1c1c1e' : '#e5e5ea'}`,
+                                border: `1.5px solid ${privKey ? (addressPreview ? '#34c759' : '#ff3b30') : '#e5e5ea'}`,
                                 borderRadius: '10px 3px 10px 3px',
                                 outline: 'none',
                                 fontFamily: 'monospace',
                                 resize: 'none',
                                 lineHeight: 1.5,
+                                transition: 'border-color 0.2s',
                             }}
                         />
+                        {addressPreview && (
+                            <div style={{
+                                marginTop: 8,
+                                padding: '10px 12px',
+                                background: '#d1f5dc',
+                                borderRadius: '3px 10px 3px 10px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 2,
+                            }}>
+                                <span style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    color: '#1a7a3a',
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                }}>
+                                    ur address
+                                </span>
+                                <span style={{
+                                    fontSize: 11,
+                                    color: '#1c1c1e',
+                                    fontFamily: 'monospace',
+                                    wordBreak: 'break-all',
+                                }}>
+                                    {addressPreview}
+                                </span>
+                            </div>
+                        )}
+                        {privKey && !addressPreview && (
+                            <div style={{
+                                marginTop: 8,
+                                padding: '8px 12px',
+                                background: '#ffeaea',
+                                borderRadius: '3px 10px 3px 10px',
+                            }}>
+                                <span style={{
+                                    fontSize: 11,
+                                    color: '#c0392b',
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+                                }}>
+                                    invalid key format
+                                </span>
+                            </div>
+                        )}
                     </div>
                 )}
 
