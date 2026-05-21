@@ -37,7 +37,7 @@ Built on the **PIE framework** — a Python + Next.js full-stack setup with opin
 | 🟡 BNB Chain | BNB | 12/24-word seed, hex private key |
 | ◎ Solana | SOL | 12/24-word seed, hex private key |
 | 💎 TON | TON | 12/24-word seed (TON-specific), hex private key |
-| 🌊 Waves | WAVES | 15-word seed, brainwallet (any string), hex/base58 private key |
+| 〽 Waves | WAVES | 15-word seed, brainwallet (any string), hex/base58 private key |
 
 ---
 
@@ -119,7 +119,7 @@ Private RPCs from Alchemy/Infura are free tier friendly and significantly more r
 
 ---
 
-## 🌊 WAVES Special Features
+## 〽 WAVES Special Features
 
 WAVES is... a special network. Unlike every other chain on earth, it supports **brainwallet seeds** — literally any UTF-8 string becomes a valid wallet seed. Your pet's name? Valid. The full text of Moby Dick? Also valid (but maybe don't).
 
