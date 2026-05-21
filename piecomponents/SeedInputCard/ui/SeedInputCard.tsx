@@ -6,7 +6,7 @@ import { validateSeedPhraseForNetwork, deriveAddress, Network } from '@/lib/wall
 import { useWallet } from '@/components/WalletContext'
 import { SeedInputCardProps } from '../types'
 
-type Mode = 'seed' | 'privkey'
+type Mode = 'seed' | 'privkey' | 'custom'
 
 // secp256k1 curve order — private key must be strictly within (0, ORDER)
 const SECP256K1_ORDER = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141')
@@ -93,37 +93,47 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
     const [wordCount, setWordCount] = useState<12 | 15 | 24>(wavesMode ? 15 : 12)
     const [words, setWords] = useState<string[]>(Array(wavesMode ? 15 : 12).fill(''))
     const [privKey, setPrivKey] = useState('')
+    const [customSeed, setCustomSeed] = useState('')
     const [addressPreview, setAddressPreview] = useState<string | null>(null)
     const [error, setError] = useState('')
     const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
-    // Derive address preview whenever privKey or network changes in privkey mode
+    // Derive address preview for privkey and custom seed modes
     useEffect(() => {
-        if (mode !== 'privkey' || !privKey.trim()) {
-            setAddressPreview(null)
-            return
-        }
+        if (mode !== 'privkey' && mode !== 'custom') { setAddressPreview(null); return }
+
+        const input = mode === 'privkey' ? privKey : customSeed
+        if (!input.trim()) { setAddressPreview(null); return }
+
         let cancelled = false
         ;(async () => {
-            const hexKey = await normalizePrivKey(privKey, network)
-            if (cancelled || !hexKey) { setAddressPreview(null); return }
             try {
-                const addr = await deriveAddress(['__privkey__', hexKey], network)
+                let seedWords: string[]
+                if (mode === 'privkey') {
+                    const hexKey = await normalizePrivKey(input, network)
+                    if (!hexKey) { setAddressPreview(null); return }
+                    seedWords = ['__privkey__', hexKey]
+                } else {
+                    seedWords = ['__wavesseed__', input]
+                }
+                const addr = await deriveAddress(seedWords, network)
                 if (!cancelled) setAddressPreview(addr)
             } catch {
                 if (!cancelled) setAddressPreview(null)
             }
         })()
         return () => { cancelled = true }
-    }, [privKey, network, mode])
+    }, [privKey, customSeed, network, mode])
 
     const dynamicSubtitle = mode === 'privkey'
         ? "paste ur private key. we wont tell anyone."
-        : wordCount === 12
-            ? "12 words, in order, dont mess it up"
-            : wordCount === 15
-                ? "15 words. waves is special like that."
-                : "24 words. yeah really. hope u have time."
+        : mode === 'custom'
+            ? "any string. yes really. waves brainwallet."
+            : wordCount === 12
+                ? "12 words, in order, dont mess it up"
+                : wordCount === 15
+                    ? "15 words. waves is special like that."
+                    : "24 words. yeah really. hope u have time."
 
     const handleModeChange = (m: Mode) => {
         setMode(m)
@@ -187,8 +197,22 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
         router.push(`/wallet/pin?network=${network}&flow=import`)
     }
 
+    const handleConfirmCustom = () => {
+        if (!customSeed.trim()) {
+            setError('type something. anything.')
+            return
+        }
+        if (!addressPreview) {
+            setError('address not derived yet, wait a sec')
+            return
+        }
+        setSeedWords(['__wavesseed__', customSeed], network)
+        router.push(`/wallet/pin?network=${network}&flow=import`)
+    }
+
     const isSeedActive = mode === 'seed'
     const isPrivkeyActive = mode === 'privkey'
+    const isCustomActive = mode === 'custom'
 
     const tabStyle = (active: boolean) => ({
         padding: '7px 16px',
@@ -257,6 +281,11 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                                 24 wrds
                             </button>
                         </>
+                    )}
+                    {wavesMode && (
+                        <button type="button" onClick={() => handleModeChange('custom')} style={tabStyle(isCustomActive)}>
+                            custom
+                        </button>
                     )}
                     <button type="button" onClick={() => handleModeChange('privkey')} style={tabStyle(isPrivkeyActive)}>
                         priv key
@@ -401,6 +430,65 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                     </div>
                 )}
 
+                {/* Custom WAVES seed (brainwallet) */}
+                {isCustomActive && (
+                    <div style={{ marginTop: 24, width: '100%', maxWidth: 340 }}>
+                        <textarea
+                            autoCorrect="off"
+                            spellCheck={false}
+                            value={customSeed}
+                            onChange={e => { setCustomSeed(e.target.value); setError('') }}
+                            placeholder={'any text, any language, any length'}
+                            rows={4}
+                            style={{
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                padding: '12px 14px',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: '#1c1c1e',
+                                background: '#fff',
+                                border: `1.5px solid ${customSeed ? '#1c1c1e' : '#e5e5ea'}`,
+                                borderRadius: '10px 3px 10px 3px',
+                                outline: 'none',
+                                fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+                                resize: 'none',
+                                lineHeight: 1.5,
+                            }}
+                        />
+                        {addressPreview && (
+                            <div style={{
+                                marginTop: 8,
+                                padding: '10px 12px',
+                                background: '#d1f5dc',
+                                borderRadius: '3px 10px 3px 10px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 2,
+                            }}>
+                                <span style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    color: '#1a7a3a',
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                }}>
+                                    ur address
+                                </span>
+                                <span style={{
+                                    fontSize: 11,
+                                    color: '#1c1c1e',
+                                    fontFamily: 'monospace',
+                                    wordBreak: 'break-all',
+                                }}>
+                                    {addressPreview}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {error && (
                     <p style={{
                         marginTop: 12,
@@ -417,7 +505,7 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                 <div style={{ marginTop: 24, width: '100%', maxWidth: 320 }}>
                     <button
                         type="button"
-                        onClick={isSeedActive ? handleConfirmSeed : handleConfirmPrivKey}
+                        onClick={isSeedActive ? handleConfirmSeed : isCustomActive ? handleConfirmCustom : handleConfirmPrivKey}
                         style={{
                             width: '100%',
                             padding: '17px 24px',

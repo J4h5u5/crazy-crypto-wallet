@@ -3,7 +3,7 @@
 import { HDKey } from '@scure/bip32'
 import { mnemonicToSeedSync } from '@scure/bip39'
 import { mnemonicToPrivateKey } from '@ton/crypto'
-import { Network, isPrivKeyImport } from './crypto'
+import { Network, isPrivKeyImport, isWavesSeedImport } from './crypto'
 
 // ── Default RPC endpoints ────────────────────────────────────────────────────
 // TON: toncenter (CORS-enabled). Free key → 10 req/s, no key → 1 req/s
@@ -308,10 +308,12 @@ async function sendSol(words: string[], to: string, amount: string): Promise<str
 async function sendWaves(words: string[], to: string, amount: string): Promise<string> {
     const { transfer, broadcast } = await import('@waves/waves-transactions')
 
-    let signer: string  // seed phrase string OR base58 private key
+    let signer: string  // seed phrase string OR base58 private key OR custom brainwallet
     if (isPrivKeyImport(words)) {
         const { base58Encode } = await import('@waves/ts-lib-crypto')
         signer = base58Encode(Buffer.from(words[1], 'hex'))
+    } else if (isWavesSeedImport(words)) {
+        signer = words[1]  // raw custom seed string
     } else {
         signer = words.join(' ')
     }

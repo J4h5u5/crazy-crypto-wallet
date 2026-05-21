@@ -36,6 +36,10 @@ export function isPrivKeyImport(words: string[]): boolean {
     return words.length === 2 && words[0] === '__privkey__'
 }
 
+export function isWavesSeedImport(words: string[]): boolean {
+    return words.length === 2 && words[0] === '__wavesseed__'
+}
+
 export async function deriveAddress(words: string[], network: Network): Promise<string> {
     // Handle imported private key (stored as ['__privkey__', hexKey])
     if (isPrivKeyImport(words)) {
@@ -108,6 +112,11 @@ export async function deriveAddress(words: string[], network: Network): Promise<
     }
 
     if (network === 'waves') {
+        // Custom brainwallet seed: any UTF-8 string
+        if (isWavesSeedImport(words)) {
+            const { address, keyPair } = await import('@waves/ts-lib-crypto')
+            return address(keyPair(words[1]))
+        }
         const { address, keyPair } = await import('@waves/ts-lib-crypto')
         return address(keyPair(mnemonic))
     }
