@@ -15,7 +15,7 @@ class NetworkSelectorCard(Card):
         {"id": "bsc", "label": "BNB Chain", "emoji": "🟡", "desc": "Eth But Cheaper"},
         {"id": "sol", "label": "Solana",    "emoji": "◎",  "desc": "Fast Until It Isnt"},
         {"id": "ton",   "label": "TON",   "emoji": "💎", "desc": "The Open Netwrk"},
-        {"id": "waves", "label": "Waves", "emoji": "〽", "desc": "Blckchn 4 the ppl"},
+        {"id": "waves", "label": "Waves", "emoji": "🔷", "desc": "Blckchn 4 the ppl"},
     ])
     selected_network: str = "btc"
     flow: str = "create"
