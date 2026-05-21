@@ -8,7 +8,7 @@ import { PublicKey } from '@solana/web3.js'
 import nacl from 'tweetnacl'
 import { mnemonicToPrivateKey, mnemonicValidate } from '@ton/crypto'
 
-export type Network = 'ton' | 'eth' | 'sol'
+export type Network = 'btc' | 'eth' | 'bsc' | 'sol' | 'ton'
 
 export interface WalletKeys {
     network: Network
@@ -45,9 +45,18 @@ export async function deriveAddress(words: string[], network: Network): Promise<
     const seed = mnemonicToSeedSync(mnemonic)
     const hd = HDKey.fromMasterSeed(seed)
 
-    if (network === 'eth') {
+    if (network === 'btc') {
+        const child = hd.derive("m/84'/0'/0'/0/0")  // BIP84 native segwit
+        if (!child.publicKey) throw new Error('failed to derive BTC key')
+        const { p2wpkh, NETWORK } = await import('@scure/btc-signer')
+        const payment = p2wpkh(child.publicKey, NETWORK)
+        if (!payment.address) throw new Error('failed to compute BTC address')
+        return payment.address
+    }
+
+    if (network === 'eth' || network === 'bsc') {
         const child = hd.derive("m/44'/60'/0'/0/0")
-        if (!child.privateKey) throw new Error('failed to derive ETH key')
+        if (!child.privateKey) throw new Error('failed to derive key')
         return privateKeyToAddress(('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`)
     }
 
@@ -144,9 +153,9 @@ export function clearWallet(): void {
 }
 
 export function networkLabel(network: Network): string {
-    return { ton: 'TON', eth: 'Ethereum', sol: 'Solana' }[network]
+    return { btc: 'Bitcoin', eth: 'Ethereum', bsc: 'BNB Chain', sol: 'Solana', ton: 'TON' }[network]
 }
 
 export function networkCurrency(network: Network): string {
-    return { ton: 'TON', eth: 'ETH', sol: 'SOL' }[network]
+    return { btc: 'BTC', eth: 'ETH', bsc: 'BNB', sol: 'SOL', ton: 'TON' }[network]
 }

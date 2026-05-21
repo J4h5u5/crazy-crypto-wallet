@@ -10,11 +10,13 @@ class NetworkSelectorCard(Card):
     title: str = "Chose Ur Netwrk"
     subtitle: str = "pick one, dont blame us"
     networks: List[Dict[str, str]] = field(default_factory=lambda: [
-        {"id": "ton", "label": "TON", "emoji": "💎", "desc": "The Open Netwrk"},
-        {"id": "eth", "label": "Ethereum", "emoji": "⟠", "desc": "Slow & Expnsive™"},
-        {"id": "sol", "label": "Solana", "emoji": "◎", "desc": "Fast Until It Isnt"},
+        {"id": "btc", "label": "Bitcoin",   "emoji": "₿",  "desc": "Orijinal. Still Here."},
+        {"id": "eth", "label": "Ethereum",  "emoji": "⟠",  "desc": "Slow & Expnsive™"},
+        {"id": "bsc", "label": "BNB Chain", "emoji": "🟡", "desc": "Eth But Cheaper"},
+        {"id": "sol", "label": "Solana",    "emoji": "◎",  "desc": "Fast Until It Isnt"},
+        {"id": "ton", "label": "TON",       "emoji": "💎", "desc": "The Open Netwrk"},
     ])
-    selected_network: str = "ton"
+    selected_network: str = "btc"
     flow: str = "create"
 
     pathname: Optional[str] = None

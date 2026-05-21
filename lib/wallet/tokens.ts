@@ -25,9 +25,19 @@ const ETH_TOKENS: { symbol: string; name: string; address: string; decimals: num
     { symbol: 'UNI',  name: 'Uniswap',          address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18 },
 ]
 
+// Popular BEP-20 tokens on BSC
+const BSC_TOKENS: { symbol: string; name: string; address: string; decimals: number }[] = [
+    { symbol: 'USDT',  name: 'Tether USD',    address: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 },
+    { symbol: 'USDC',  name: 'USD Coin',       address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', decimals: 18 },
+    { symbol: 'BUSD',  name: 'Binance USD',    address: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', decimals: 18 },
+    { symbol: 'WETH',  name: 'Wrapped ETH',    address: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', decimals: 18 },
+    { symbol: 'CAKE',  name: 'PancakeSwap',    address: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82', decimals: 18 },
+]
+
 export async function fetchTokenBalances(address: string, network: Network): Promise<TokenBalance[]> {
     if (network === 'ton') return fetchTonJettons(address)
     if (network === 'eth') return fetchEthTokens(address)
+    if (network === 'bsc') return fetchBscTokens(address)
     if (network === 'sol') return fetchSolTokens(address)
     return []
 }
@@ -82,6 +92,44 @@ async function fetchEthTokens(address: string): Promise<TokenBalance[]> {
         const balances: TokenBalance[] = []
         for (const r of results) {
             const token = ETH_TOKENS.find(t => t.address === r.id)
+            if (!token || !r.result || r.result === '0x') continue
+            const raw = BigInt(r.result)
+            if (raw === BigInt(0)) continue
+            const human = (Number(raw) / Math.pow(10, token.decimals)).toFixed(token.decimals > 6 ? 4 : 2)
+            balances.push({
+                symbol: token.symbol,
+                name: token.name,
+                balance: human,
+                rawBalance: raw.toString(),
+                contractAddress: token.address,
+                decimals: token.decimals,
+            })
+        }
+        return balances
+    } catch {
+        return []
+    }
+}
+
+// ── BSC: balanceOf() for popular BEP-20s ────────────────────────────────────
+async function fetchBscTokens(address: string): Promise<TokenBalance[]> {
+    const BSC_RPC = 'https://bsc-dataseed.binance.org/'
+    const calls = BSC_TOKENS.map(t => ({
+        jsonrpc: '2.0', id: t.address,
+        method: 'eth_call',
+        params: [{ to: t.address, data: '0x70a08231' + address.slice(2).padStart(64, '0') }, 'latest'],
+    }))
+
+    try {
+        const res = await fetch(BSC_RPC, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(calls),
+        })
+        const results: { id: string; result: string }[] = await res.json()
+        const balances: TokenBalance[] = []
+        for (const r of results) {
+            const token = BSC_TOKENS.find(t => t.address === r.id)
             if (!token || !r.result || r.result === '0x') continue
             const raw = BigInt(r.result)
             if (raw === BigInt(0)) continue

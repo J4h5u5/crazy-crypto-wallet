@@ -13,7 +13,9 @@ const TON_ENDPOINT = TON_API_KEY
     ? `https://toncenter.com/api/v2/jsonRPC?api_key=${TON_API_KEY}`
     : 'https://toncenter.com/api/v2/jsonRPC'
 const ETH_ENDPOINT = 'https://cloudflare-eth.com'
+const BSC_ENDPOINT = 'https://bsc-dataseed.binance.org/'
 const SOL_ENDPOINT = 'https://api.mainnet-beta.solana.com'
+const BTC_API = 'https://mempool.space/api'
 
 // ── Balance fetching ─────────────────────────────────────────────────────────
 
@@ -30,8 +32,30 @@ export async function fetchBalance(address: string, network: Network): Promise<s
             return '0'
         }
 
+        if (network === 'btc') {
+            const res = await fetch(`${BTC_API}/address/${address}`)
+            const data = await res.json()
+            const sats = (data.chain_stats?.funded_txo_sum ?? 0) - (data.chain_stats?.spent_txo_sum ?? 0)
+            return (sats / 1e8).toFixed(8)
+        }
+
         if (network === 'eth') {
             const res = await fetch(ETH_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0', id: 1,
+                    method: 'eth_getBalance',
+                    params: [address, 'latest'],
+                }),
+            })
+            const data = await res.json()
+            const wei = BigInt(data.result)
+            return (Number(wei) / 1e18).toFixed(6)
+        }
+
+        if (network === 'bsc') {
+            const res = await fetch(BSC_ENDPOINT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -73,10 +97,87 @@ export async function sendTransaction(
     toAddress: string,
     amount: string
 ): Promise<string> {
-    if (network === 'ton') return sendTon(words, toAddress, amount)
+    if (network === 'btc') return sendBtc(words, toAddress, amount)
     if (network === 'eth') return sendEth(words, toAddress, amount)
+    if (network === 'bsc') return sendBsc(words, toAddress, amount)
     if (network === 'sol') return sendSol(words, toAddress, amount)
+    if (network === 'ton') return sendTon(words, toAddress, amount)
     throw new Error(`unsupported network: ${network}`)
+}
+
+async function sendBtc(words: string[], to: string, amount: string): Promise<string> {
+    const { p2wpkh, Transaction, NETWORK } = await import('@scure/btc-signer')
+
+    const seed = mnemonicToSeedSync(words.join(' '))
+    const hd = HDKey.fromMasterSeed(seed)
+    const child = hd.derive("m/84'/0'/0'/0/0")
+    if (!child.privateKey || !child.publicKey) throw new Error('key derivation failed')
+
+    const payment = p2wpkh(child.publicKey, NETWORK)
+    const fromAddress = payment.address!
+
+    // Fetch UTXOs
+    const utxoRes = await fetch(`${BTC_API}/address/${fromAddress}/utxo`)
+    const utxos: { txid: string; vout: number; value: number }[] = await utxoRes.json()
+    if (!utxos.length) throw new Error('no UTXOs available')
+
+    // Fetch recommended fee rate (sat/vbyte)
+    const feeRes = await fetch(`${BTC_API}/v1/fees/recommended`)
+    const fees = await feeRes.json()
+    const feeRate = fees.halfHourFee ?? 10
+
+    const satAmount = Math.round(parseFloat(amount) * 1e8)
+    const estimatedFee = feeRate * 141  // ~141 vbytes for 1-in-2-out P2WPKH
+
+    const tx = new Transaction()
+    let inputSum = 0
+    for (const utxo of utxos) {
+        const rawTxRes = await fetch(`${BTC_API}/tx/${utxo.txid}/hex`)
+        const rawTx = await rawTxRes.text()
+        tx.addInput({
+            txid: utxo.txid,
+            index: utxo.vout,
+            witnessUtxo: { script: payment.script, amount: BigInt(utxo.value) },
+        })
+        inputSum += utxo.value
+        if (inputSum >= satAmount + estimatedFee) break
+    }
+
+    if (inputSum < satAmount + estimatedFee) throw new Error('insufficient balance')
+
+    tx.addOutputAddress(to, BigInt(satAmount), NETWORK)
+    const change = inputSum - satAmount - estimatedFee
+    if (change > 546) tx.addOutputAddress(fromAddress, BigInt(change), NETWORK)
+
+    tx.sign(child.privateKey)
+    tx.finalize()
+
+    const rawHex = tx.hex
+    const broadcastRes = await fetch(`${BTC_API}/tx`, { method: 'POST', body: rawHex })
+    if (!broadcastRes.ok) throw new Error(await broadcastRes.text())
+    return await broadcastRes.text()  // txid
+}
+
+async function sendBsc(words: string[], to: string, amount: string): Promise<string> {
+    const { createWalletClient, http, parseEther, isAddress } = await import('viem')
+    const { bsc } = await import('viem/chains')
+    const { privateKeyToAccount } = await import('viem/accounts')
+
+    const seed = mnemonicToSeedSync(words.join(' '))
+    const hd = HDKey.fromMasterSeed(seed)
+    const child = hd.derive("m/44'/60'/0'/0/0")
+    if (!child.privateKey) throw new Error('key derivation failed')
+    const privateKey = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
+    const account = privateKeyToAccount(privateKey)
+
+    if (!isAddress(to)) throw new Error(`invalid BSC address: ${to}`)
+
+    const walletClient = createWalletClient({ account, chain: bsc, transport: http(BSC_ENDPOINT) })
+    return walletClient.sendTransaction({
+        to: to as `0x${string}`,
+        value: parseEther(amount),
+        chain: bsc,
+    })
 }
 
 async function sendTon(words: string[], to: string, amount: string): Promise<string> {
