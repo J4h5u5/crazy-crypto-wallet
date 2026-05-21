@@ -16,6 +16,7 @@ const ETH_ENDPOINT = 'https://cloudflare-eth.com'
 const BSC_ENDPOINT = 'https://bsc-dataseed.binance.org/'
 const SOL_ENDPOINT = 'https://api.mainnet-beta.solana.com'
 const BTC_API = 'https://mempool.space/api'
+const WAVES_NODE = 'https://nodes.wavesnodes.com'
 
 // ── Balance fetching ─────────────────────────────────────────────────────────
 
@@ -69,6 +70,12 @@ export async function fetchBalance(address: string, network: Network): Promise<s
             return (Number(wei) / 1e18).toFixed(6)
         }
 
+        if (network === 'waves') {
+            const res = await fetch(`${WAVES_NODE}/addresses/balance/${address}`)
+            const data = await res.json()
+            return (data.balance / 1e8).toFixed(8)
+        }
+
         if (network === 'sol') {
             const res = await fetch(SOL_ENDPOINT, {
                 method: 'POST',
@@ -102,6 +109,7 @@ export async function sendTransaction(
     if (network === 'bsc') return sendBsc(words, toAddress, amount)
     if (network === 'sol') return sendSol(words, toAddress, amount)
     if (network === 'ton') return sendTon(words, toAddress, amount)
+    if (network === 'waves') return sendWaves(words, toAddress, amount)
     throw new Error(`unsupported network: ${network}`)
 }
 
@@ -295,4 +303,21 @@ async function sendSol(words: string[], to: string, amount: string): Promise<str
 
     const sig = await sendAndConfirmTransaction(connection, transaction, [keypair])
     return sig
+}
+
+async function sendWaves(words: string[], to: string, amount: string): Promise<string> {
+    const { transfer, broadcast } = await import('@waves/waves-transactions')
+
+    let signer: string  // seed phrase string OR base58 private key
+    if (isPrivKeyImport(words)) {
+        const { base58Encode } = await import('@waves/ts-lib-crypto')
+        signer = base58Encode(Buffer.from(words[1], 'hex'))
+    } else {
+        signer = words.join(' ')
+    }
+
+    const wavelets = Math.round(parseFloat(amount) * 1e8)
+    const tx = transfer({ recipient: to, amount: wavelets, fee: 100000 }, signer)
+    const result = await broadcast(tx, WAVES_NODE)
+    return (result as { id: string }).id
 }

@@ -62,6 +62,21 @@ async function normalizePrivKey(raw: string, net: Network): Promise<string | nul
         return BigInt('0x' + hex) > BigInt(0) ? hex.toLowerCase() : null
     }
 
+    if (net === 'waves') {
+        // WAVES base58 private key (~44 chars, as exported by Waves Keeper / exchange)
+        if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(trimmed)) {
+            try {
+                const { base58Decode } = await import('@waves/ts-lib-crypto')
+                const decoded = base58Decode(trimmed)
+                if (decoded.length === 32) return Buffer.from(decoded).toString('hex')
+            } catch { return null }
+        }
+        // raw hex
+        const hex = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
+        if (!/^[0-9a-fA-F]{64}$/.test(hex)) return null
+        return BigInt('0x' + hex) > BigInt(0) ? hex.toLowerCase() : null
+    }
+
     return null
 }
 
@@ -303,7 +318,9 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                                     ? 'WIF (K…/L…/5…) or 64 hex chars'
                                     : network === 'sol'
                                         ? 'base58 keypair or 64 hex chars'
-                                        : '64 hex chars (0x optional)'
+                                        : network === 'waves'
+                                            ? 'base58 private key or 64 hex chars'
+                                            : '64 hex chars (0x optional)'
                             }
                             rows={4}
                             style={{

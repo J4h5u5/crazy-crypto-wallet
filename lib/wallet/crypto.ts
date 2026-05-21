@@ -8,7 +8,7 @@ import { PublicKey } from '@solana/web3.js'
 import nacl from 'tweetnacl'
 import { mnemonicToPrivateKey, mnemonicValidate } from '@ton/crypto'
 
-export type Network = 'btc' | 'eth' | 'bsc' | 'sol' | 'ton'
+export type Network = 'btc' | 'eth' | 'bsc' | 'sol' | 'ton' | 'waves'
 
 export interface WalletKeys {
     network: Network
@@ -63,6 +63,13 @@ export async function deriveAddress(words: string[], network: Network): Promise<
             const kp = nacl.sign.keyPair.fromSeed(privBytes)
             return new PublicKey(kp.publicKey).toBase58()
         }
+        if (network === 'waves') {
+            const { base58Encode } = await import('@waves/ts-lib-crypto')
+            const { address, publicKey } = await import('@waves/ts-lib-crypto')
+            const privKeyBase58 = base58Encode(privBytes)
+            const pubKey = publicKey({ privateKey: privKeyBase58 })
+            return address({ publicKey: pubKey })
+        }
         throw new Error(`unsupported network for privkey import: ${network}`)
     }
 
@@ -98,6 +105,11 @@ export async function deriveAddress(words: string[], network: Network): Promise<
         if (!child.privateKey) throw new Error('failed to derive SOL key')
         const kp = nacl.sign.keyPair.fromSeed(child.privateKey)
         return new PublicKey(kp.publicKey).toBase58()
+    }
+
+    if (network === 'waves') {
+        const { address, keyPair } = await import('@waves/ts-lib-crypto')
+        return address(keyPair(mnemonic))
     }
 
     throw new Error(`unsupported network: ${network}`)
@@ -186,9 +198,9 @@ export function clearWallet(): void {
 }
 
 export function networkLabel(network: Network): string {
-    return { btc: 'Bitcoin', eth: 'Ethereum', bsc: 'BNB Chain', sol: 'Solana', ton: 'TON' }[network]
+    return { btc: 'Bitcoin', eth: 'Ethereum', bsc: 'BNB Chain', sol: 'Solana', ton: 'TON', waves: 'Waves' }[network]
 }
 
 export function networkCurrency(network: Network): string {
-    return { btc: 'BTC', eth: 'ETH', bsc: 'BNB', sol: 'SOL', ton: 'TON' }[network]
+    return { btc: 'BTC', eth: 'ETH', bsc: 'BNB', sol: 'SOL', ton: 'TON', waves: 'WAVES' }[network]
 }
