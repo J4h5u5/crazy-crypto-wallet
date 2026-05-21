@@ -6,19 +6,72 @@ import { validateSeedPhraseForNetwork, Network } from '@/lib/wallet/crypto'
 import { useWallet } from '@/components/WalletContext'
 import { SeedInputCardProps } from '../types'
 
+type Mode = 'seed' | 'privkey'
+
+async function normalizePrivKey(raw: string, net: Network): Promise<string | null> {
+    const trimmed = raw.trim()
+
+    if (net === 'eth' || net === 'bsc' || net === 'ton') {
+        const hex = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
+        return /^[0-9a-fA-F]{64}$/.test(hex) ? hex.toLowerCase() : null
+    }
+
+    if (net === 'btc') {
+        // WIF format (compressed or uncompressed)
+        if (/^[5KL][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(trimmed)) {
+            try {
+                const { WIF, NETWORK } = await import('@scure/btc-signer')
+                const decoded = WIF(NETWORK).decode(trimmed)
+                return Buffer.from(decoded).toString('hex')
+            } catch { return null }
+        }
+        const hex = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
+        return /^[0-9a-fA-F]{64}$/.test(hex) ? hex.toLowerCase() : null
+    }
+
+    if (net === 'sol') {
+        // Base58-encoded full 64-byte keypair (phantom/solflare export)
+        if (/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(trimmed)) {
+            try {
+                const { base58 } = await import('@scure/base')
+                const decoded = base58.decode(trimmed)
+                if (decoded.length >= 32) return Buffer.from(decoded.slice(0, 32)).toString('hex')
+            } catch { return null }
+        }
+        const hex = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
+        return /^[0-9a-fA-F]{64}$/.test(hex) ? hex.toLowerCase() : null
+    }
+
+    return null
+}
+
 const SeedInputCard = ({ data }: SeedInputCardProps) => {
-    const { title, subtitle } = data
+    const { title } = data
     const router = useRouter()
     const searchParams = useSearchParams()
     const network = (searchParams.get('network') || 'ton') as Network
     const { setSeedWords } = useWallet()
 
+    const [mode, setMode] = useState<Mode>('seed')
     const [wordCount, setWordCount] = useState<12 | 24>(12)
     const [words, setWords] = useState<string[]>(Array(12).fill(''))
+    const [privKey, setPrivKey] = useState('')
     const [error, setError] = useState('')
     const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
+    const dynamicSubtitle = mode === 'privkey'
+        ? "paste ur private key. we wont tell anyone."
+        : wordCount === 12
+            ? "12 words, in order, dont mess it up"
+            : "24 words. yeah really. hope u have time."
+
+    const handleModeChange = (m: Mode) => {
+        setMode(m)
+        setError('')
+    }
+
     const handleWordCountChange = (n: 12 | 24) => {
+        setMode('seed')
         setWordCount(n)
         setWords(Array(n).fill(''))
         setError('')
@@ -45,7 +98,7 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
         }
     }
 
-    const handleConfirm = async () => {
+    const handleConfirmSeed = async () => {
         const trimmed = words.map(w => w.trim().toLowerCase())
         if (trimmed.some(w => !w)) {
             setError(`fill in all ${wordCount} words. yes all of them.`)
@@ -59,6 +112,36 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
         setSeedWords(trimmed, network)
         router.push(`/wallet/pin?network=${network}&flow=import`)
     }
+
+    const handleConfirmPrivKey = async () => {
+        if (!privKey.trim()) {
+            setError('paste ur key first genius')
+            return
+        }
+        const hexKey = await normalizePrivKey(privKey, network)
+        if (!hexKey) {
+            setError(`invalid ${network.toUpperCase()} private key format`)
+            return
+        }
+        setSeedWords(['__privkey__', hexKey], network)
+        router.push(`/wallet/pin?network=${network}&flow=import`)
+    }
+
+    const isSeedActive = mode === 'seed'
+    const isPrivkeyActive = mode === 'privkey'
+
+    const tabStyle = (active: boolean) => ({
+        padding: '7px 16px',
+        background: active ? '#1c1c1e' : 'transparent',
+        color: active ? '#f2f2f7' : '#636366',
+        border: 'none',
+        borderRadius: '8px 2px 8px 2px',
+        fontSize: 13,
+        fontWeight: 700,
+        cursor: 'pointer',
+        fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+        transition: 'all 0.15s',
+    })
 
     return (
         <PieCard card='SeedInputCard' data={data}>
@@ -89,10 +172,10 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                     textAlign: 'center',
                     fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
                 }}>
-                    {subtitle}
+                    {dynamicSubtitle}
                 </p>
 
-                {/* 12 / 24 toggle */}
+                {/* 12 / 24 / priv key tabs */}
                 <div style={{
                     marginTop: 20,
                     display: 'flex',
@@ -101,78 +184,105 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                     padding: 3,
                     gap: 3,
                 }}>
-                    {([12, 24] as const).map(n => (
-                        <button
-                            key={n}
-                            type="button"
-                            onClick={() => handleWordCountChange(n)}
-                            style={{
-                                padding: '7px 22px',
-                                background: wordCount === n ? '#1c1c1e' : 'transparent',
-                                color: wordCount === n ? '#f2f2f7' : '#636366',
-                                border: 'none',
-                                borderRadius: '8px 2px 8px 2px',
-                                fontSize: 13,
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
-                                transition: 'all 0.15s',
-                            }}
-                        >
-                            {n} wrds
-                        </button>
-                    ))}
+                    <button type="button" onClick={() => handleWordCountChange(12)} style={tabStyle(isSeedActive && wordCount === 12)}>
+                        12 wrds
+                    </button>
+                    <button type="button" onClick={() => handleWordCountChange(24)} style={tabStyle(isSeedActive && wordCount === 24)}>
+                        24 wrds
+                    </button>
+                    <button type="button" onClick={() => handleModeChange('privkey')} style={tabStyle(isPrivkeyActive)}>
+                        priv key
+                    </button>
                 </div>
 
-                <div style={{
-                    marginTop: 24,
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr 1fr',
-                    gap: 8,
-                    width: '100%',
-                    maxWidth: 340,
-                }}>
-                    {words.map((word, i) => (
-                        <div key={i} style={{ position: 'relative' }}>
-                            <span style={{
-                                position: 'absolute',
-                                top: 6,
-                                left: 8,
-                                fontSize: 9,
-                                color: '#aeaeb2',
+                {/* Seed phrase grid */}
+                {isSeedActive && (
+                    <div style={{
+                        marginTop: 24,
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr 1fr',
+                        gap: 8,
+                        width: '100%',
+                        maxWidth: 340,
+                    }}>
+                        {words.map((word, i) => (
+                            <div key={i} style={{ position: 'relative' }}>
+                                <span style={{
+                                    position: 'absolute',
+                                    top: 6,
+                                    left: 8,
+                                    fontSize: 9,
+                                    color: '#aeaeb2',
+                                    fontFamily: 'monospace',
+                                }}>
+                                    {i + 1}
+                                </span>
+                                <input
+                                    ref={el => { inputRefs.current[i] = el }}
+                                    type="text"
+                                    autoCapitalize="none"
+                                    autoCorrect="off"
+                                    spellCheck={false}
+                                    value={word}
+                                    onChange={e => updateWord(i, e.target.value)}
+                                    onKeyDown={e => handleKeyDown(i, e)}
+                                    style={{
+                                        width: '100%',
+                                        boxSizing: 'border-box',
+                                        paddingTop: 18,
+                                        paddingBottom: 8,
+                                        paddingLeft: 8,
+                                        paddingRight: 6,
+                                        fontSize: 13,
+                                        fontWeight: 600,
+                                        color: '#1c1c1e',
+                                        background: '#fff',
+                                        border: `1.5px solid ${word ? '#1c1c1e' : '#e5e5ea'}`,
+                                        borderRadius: i % 2 === 0 ? '10px 3px 10px 3px' : '3px 10px 3px 10px',
+                                        outline: 'none',
+                                        fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+                                    }}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Private key textarea */}
+                {isPrivkeyActive && (
+                    <div style={{ marginTop: 24, width: '100%', maxWidth: 340 }}>
+                        <textarea
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            value={privKey}
+                            onChange={e => { setPrivKey(e.target.value); setError('') }}
+                            placeholder={
+                                network === 'btc'
+                                    ? 'WIF (K…/L…/5…) or 64 hex chars'
+                                    : network === 'sol'
+                                        ? 'base58 keypair or 64 hex chars'
+                                        : '64 hex chars (0x optional)'
+                            }
+                            rows={4}
+                            style={{
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                padding: '12px 14px',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: '#1c1c1e',
+                                background: '#fff',
+                                border: `1.5px solid ${privKey ? '#1c1c1e' : '#e5e5ea'}`,
+                                borderRadius: '10px 3px 10px 3px',
+                                outline: 'none',
                                 fontFamily: 'monospace',
-                            }}>
-                                {i + 1}
-                            </span>
-                            <input
-                                ref={el => { inputRefs.current[i] = el }}
-                                type="text"
-                                autoCapitalize="none"
-                                autoCorrect="off"
-                                spellCheck={false}
-                                value={word}
-                                onChange={e => updateWord(i, e.target.value)}
-                                onKeyDown={e => handleKeyDown(i, e)}
-                                style={{
-                                    width: '100%',
-                                    boxSizing: 'border-box',
-                                    paddingTop: 18,
-                                    paddingBottom: 8,
-                                    paddingLeft: 8,
-                                    paddingRight: 6,
-                                    fontSize: 13,
-                                    fontWeight: 600,
-                                    color: '#1c1c1e',
-                                    background: '#fff',
-                                    border: `1.5px solid ${word ? '#1c1c1e' : '#e5e5ea'}`,
-                                    borderRadius: i % 2 === 0 ? '10px 3px 10px 3px' : '3px 10px 3px 10px',
-                                    outline: 'none',
-                                    fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
-                                }}
-                            />
-                        </div>
-                    ))}
-                </div>
+                                resize: 'none',
+                                lineHeight: 1.5,
+                            }}
+                        />
+                    </div>
+                )}
 
                 {error && (
                     <p style={{
@@ -190,7 +300,7 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                 <div style={{ marginTop: 24, width: '100%', maxWidth: 320 }}>
                     <button
                         type="button"
-                        onClick={handleConfirm}
+                        onClick={isSeedActive ? handleConfirmSeed : handleConfirmPrivKey}
                         style={{
                             width: '100%',
                             padding: '17px 24px',

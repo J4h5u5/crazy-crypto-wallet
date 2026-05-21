@@ -32,7 +32,40 @@ export async function validateSeedPhraseForNetwork(words: string[], network: Net
     return validateMnemonic(words.join(' '), englishWordlist)
 }
 
+export function isPrivKeyImport(words: string[]): boolean {
+    return words.length === 2 && words[0] === '__privkey__'
+}
+
 export async function deriveAddress(words: string[], network: Network): Promise<string> {
+    // Handle imported private key (stored as ['__privkey__', hexKey])
+    if (isPrivKeyImport(words)) {
+        const hexKey = words[1]
+        const privBytes = Uint8Array.from(Buffer.from(hexKey, 'hex'))
+
+        if (network === 'ton') {
+            const { WalletContractV4 } = await import('@ton/ton')
+            const kp = nacl.sign.keyPair.fromSeed(privBytes)
+            const contract = WalletContractV4.create({ publicKey: Buffer.from(kp.publicKey), workchain: 0 })
+            return contract.address.toString({ urlSafe: true, bounceable: false })
+        }
+        if (network === 'btc') {
+            const { p2wpkh, NETWORK } = await import('@scure/btc-signer')
+            const { secp256k1 } = await import('@noble/curves/secp256k1.js')
+            const pubKey = secp256k1.getPublicKey(privBytes, true)
+            const payment = p2wpkh(pubKey, NETWORK)
+            if (!payment.address) throw new Error('failed to compute BTC address')
+            return payment.address
+        }
+        if (network === 'eth' || network === 'bsc') {
+            return privateKeyToAddress(('0x' + hexKey) as `0x${string}`)
+        }
+        if (network === 'sol') {
+            const kp = nacl.sign.keyPair.fromSeed(privBytes)
+            return new PublicKey(kp.publicKey).toBase58()
+        }
+        throw new Error(`unsupported network for privkey import: ${network}`)
+    }
+
     const mnemonic = words.join(' ')
 
     if (network === 'ton') {

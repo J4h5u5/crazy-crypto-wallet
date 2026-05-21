@@ -3,7 +3,7 @@
 import { HDKey } from '@scure/bip32'
 import { mnemonicToSeedSync } from '@scure/bip39'
 import { mnemonicToPrivateKey } from '@ton/crypto'
-import { Network } from './crypto'
+import { Network, isPrivKeyImport } from './crypto'
 
 // ── Default RPC endpoints ────────────────────────────────────────────────────
 // TON: toncenter (CORS-enabled). Free key → 10 req/s, no key → 1 req/s
@@ -108,9 +108,22 @@ export async function sendTransaction(
 async function sendBtc(words: string[], to: string, amount: string): Promise<string> {
     const { p2wpkh, Transaction, NETWORK } = await import('@scure/btc-signer')
 
-    const seed = mnemonicToSeedSync(words.join(' '))
-    const hd = HDKey.fromMasterSeed(seed)
-    const child = hd.derive("m/84'/0'/0'/0/0")
+    let privateKeyBytes: Uint8Array
+    if (isPrivKeyImport(words)) {
+        privateKeyBytes = Uint8Array.from(Buffer.from(words[1], 'hex'))
+    } else {
+        const seed = mnemonicToSeedSync(words.join(' '))
+        const hd = HDKey.fromMasterSeed(seed)
+        const child = hd.derive("m/84'/0'/0'/0/0")
+        if (!child.privateKey) throw new Error('key derivation failed')
+        privateKeyBytes = child.privateKey
+    }
+
+    const { secp256k1 } = await import('@noble/curves/secp256k1.js')
+    const publicKeyBytes = secp256k1.getPublicKey(privateKeyBytes, true)
+
+    // Shim child-like object for the rest of the function
+    const child = { privateKey: privateKeyBytes, publicKey: publicKeyBytes }
     if (!child.privateKey || !child.publicKey) throw new Error('key derivation failed')
 
     const payment = p2wpkh(child.publicKey, NETWORK)
@@ -163,11 +176,16 @@ async function sendBsc(words: string[], to: string, amount: string): Promise<str
     const { bsc } = await import('viem/chains')
     const { privateKeyToAccount } = await import('viem/accounts')
 
-    const seed = mnemonicToSeedSync(words.join(' '))
-    const hd = HDKey.fromMasterSeed(seed)
-    const child = hd.derive("m/44'/60'/0'/0/0")
-    if (!child.privateKey) throw new Error('key derivation failed')
-    const privateKey = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
+    let privateKey: `0x${string}`
+    if (isPrivKeyImport(words)) {
+        privateKey = ('0x' + words[1]) as `0x${string}`
+    } else {
+        const seed = mnemonicToSeedSync(words.join(' '))
+        const hd = HDKey.fromMasterSeed(seed)
+        const child = hd.derive("m/44'/60'/0'/0/0")
+        if (!child.privateKey) throw new Error('key derivation failed')
+        privateKey = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
+    }
     const account = privateKeyToAccount(privateKey)
 
     if (!isAddress(to)) throw new Error(`invalid BSC address: ${to}`)
@@ -184,7 +202,15 @@ async function sendTon(words: string[], to: string, amount: string): Promise<str
     const { WalletContractV4, TonClient } = await import('@ton/ton')
     const { toNano, internal, Address } = await import('@ton/core')
 
-    const keyPair = await mnemonicToPrivateKey(words)
+    let keyPair: { publicKey: Buffer; secretKey: Buffer }
+    if (isPrivKeyImport(words)) {
+        const nacl = (await import('tweetnacl')).default
+        const privBytes = Buffer.from(words[1], 'hex')
+        const kp = nacl.sign.keyPair.fromSeed(privBytes)
+        keyPair = { publicKey: Buffer.from(kp.publicKey), secretKey: Buffer.from(kp.secretKey) }
+    } else {
+        keyPair = await mnemonicToPrivateKey(words)
+    }
     const wallet = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 })
 
     const client = new TonClient({ endpoint: TON_ENDPOINT })
@@ -210,11 +236,16 @@ async function sendEth(words: string[], to: string, amount: string): Promise<str
     const { mainnet } = await import('viem/chains')
     const { privateKeyToAccount } = await import('viem/accounts')
 
-    const seed = mnemonicToSeedSync(words.join(' '))
-    const hd = HDKey.fromMasterSeed(seed)
-    const child = hd.derive("m/44'/60'/0'/0/0")
-    if (!child.privateKey) throw new Error('key derivation failed')
-    const privateKey = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
+    let privateKey: `0x${string}`
+    if (isPrivKeyImport(words)) {
+        privateKey = ('0x' + words[1]) as `0x${string}`
+    } else {
+        const seed = mnemonicToSeedSync(words.join(' '))
+        const hd = HDKey.fromMasterSeed(seed)
+        const child = hd.derive("m/44'/60'/0'/0/0")
+        if (!child.privateKey) throw new Error('key derivation failed')
+        privateKey = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
+    }
     const account = privateKeyToAccount(privateKey)
 
     const { isAddress } = await import('viem')
@@ -234,12 +265,19 @@ async function sendSol(words: string[], to: string, amount: string): Promise<str
     const { Connection, PublicKey, SystemProgram, Transaction, Keypair, LAMPORTS_PER_SOL, sendAndConfirmTransaction } = await import('@solana/web3.js')
     const nacl = (await import('tweetnacl')).default
 
-    const seed = mnemonicToSeedSync(words.join(' '))
-    const hd = HDKey.fromMasterSeed(seed)
-    const child = hd.derive("m/44'/501'/0'/0'")
-    if (!child.privateKey) throw new Error('key derivation failed')
-    const kp = nacl.sign.keyPair.fromSeed(child.privateKey)
-    const keypair = Keypair.fromSecretKey(kp.secretKey)
+    let keypair: InstanceType<typeof Keypair>
+    if (isPrivKeyImport(words)) {
+        const privBytes = Buffer.from(words[1], 'hex')
+        const kp = nacl.sign.keyPair.fromSeed(privBytes)
+        keypair = Keypair.fromSecretKey(kp.secretKey)
+    } else {
+        const seed = mnemonicToSeedSync(words.join(' '))
+        const hd = HDKey.fromMasterSeed(seed)
+        const child = hd.derive("m/44'/501'/0'/0'")
+        if (!child.privateKey) throw new Error('key derivation failed')
+        const kp = nacl.sign.keyPair.fromSeed(child.privateKey)
+        keypair = Keypair.fromSecretKey(kp.secretKey)
+    }
 
     const connection = new Connection(SOL_ENDPOINT, 'confirmed')
     const { blockhash } = await connection.getLatestBlockhash()
