@@ -57,3 +57,6 @@ yarn-error.log*
 
 # Claude AI session data
 .claude/
+
+# PIE credentials
+.pie/
