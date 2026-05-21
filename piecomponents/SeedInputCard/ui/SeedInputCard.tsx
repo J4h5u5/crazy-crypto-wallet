@@ -87,9 +87,11 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
     const network = (searchParams.get('network') || 'ton') as Network
     const { setSeedWords } = useWallet()
 
+    // WAVES uses 15-word seeds; all others use 12 or 24
+    const wavesMode = network === 'waves'
     const [mode, setMode] = useState<Mode>('seed')
-    const [wordCount, setWordCount] = useState<12 | 24>(12)
-    const [words, setWords] = useState<string[]>(Array(12).fill(''))
+    const [wordCount, setWordCount] = useState<12 | 15 | 24>(wavesMode ? 15 : 12)
+    const [words, setWords] = useState<string[]>(Array(wavesMode ? 15 : 12).fill(''))
     const [privKey, setPrivKey] = useState('')
     const [addressPreview, setAddressPreview] = useState<string | null>(null)
     const [error, setError] = useState('')
@@ -119,14 +121,16 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
         ? "paste ur private key. we wont tell anyone."
         : wordCount === 12
             ? "12 words, in order, dont mess it up"
-            : "24 words. yeah really. hope u have time."
+            : wordCount === 15
+                ? "15 words. waves is special like that."
+                : "24 words. yeah really. hope u have time."
 
     const handleModeChange = (m: Mode) => {
         setMode(m)
         setError('')
     }
 
-    const handleWordCountChange = (n: 12 | 24) => {
+    const handleWordCountChange = (n: 12 | 15 | 24) => {
         setMode('seed')
         setWordCount(n)
         setWords(Array(n).fill(''))
@@ -231,7 +235,7 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                     {dynamicSubtitle}
                 </p>
 
-                {/* 12 / 24 / priv key tabs */}
+                {/* word count / priv key tabs */}
                 <div style={{
                     marginTop: 20,
                     display: 'flex',
@@ -240,12 +244,20 @@ const SeedInputCard = ({ data }: SeedInputCardProps) => {
                     padding: 3,
                     gap: 3,
                 }}>
-                    <button type="button" onClick={() => handleWordCountChange(12)} style={tabStyle(isSeedActive && wordCount === 12)}>
-                        12 wrds
-                    </button>
-                    <button type="button" onClick={() => handleWordCountChange(24)} style={tabStyle(isSeedActive && wordCount === 24)}>
-                        24 wrds
-                    </button>
+                    {wavesMode ? (
+                        <button type="button" onClick={() => handleWordCountChange(15)} style={tabStyle(isSeedActive)}>
+                            15 wrds
+                        </button>
+                    ) : (
+                        <>
+                            <button type="button" onClick={() => handleWordCountChange(12)} style={tabStyle(isSeedActive && wordCount === 12)}>
+                                12 wrds
+                            </button>
+                            <button type="button" onClick={() => handleWordCountChange(24)} style={tabStyle(isSeedActive && wordCount === 24)}>
+                                24 wrds
+                            </button>
+                        </>
+                    )}
                     <button type="button" onClick={() => handleModeChange('privkey')} style={tabStyle(isPrivkeyActive)}>
                         priv key
                     </button>
